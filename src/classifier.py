@@ -35,6 +35,7 @@ import sys
 import math
 import pickle
 from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 
 def main(args):
   
@@ -47,9 +48,9 @@ def main(args):
             if args.use_split_dataset:
                 dataset_tmp = facenet.get_dataset(args.data_dir)
                 train_set, test_set = split_dataset(dataset_tmp, args.min_nrof_images_per_class, args.nrof_train_images_per_class)
-                if (args.mode=='TRAIN'):
+                if (args.mode=='TRAIN' or args.mode=='TRAIN_KNN'):
                     dataset = train_set
-                elif (args.mode=='CLASSIFY'):
+                elif (args.mode=='CLASSIFY' or args.mode=='CLASSIFY_KNN'):
                     dataset = test_set
             else:
                 dataset = facenet.get_dataset(args.data_dir)
@@ -66,7 +67,7 @@ def main(args):
             
             # Load the model
             print('Loading feature extraction model')
-            facenet.load_model(args.model)
+            facenet.load_model(args.model_embedding)
             
             # Get input and output tensors
             images_placeholder = tf.get_default_graph().get_tensor_by_name("input:0")
@@ -92,7 +93,10 @@ def main(args):
             if (args.mode=='TRAIN'):
                 # Train classifier
                 print('Training classifier')
-                model = SVC(kernel='linear', probability=True)
+                if (args.model_classifier == 'SVC'):
+                    model = SVC(kernel='linear', probability=True)
+                elif (args.model_classifier == 'KNN'):
+                    model = KNeighborsClassifier(weights='distance', n_jobs=-1)
                 model.fit(emb_array, labels)
             
                 # Create a list of class names
@@ -115,12 +119,54 @@ def main(args):
                 best_class_indices = np.argmax(predictions, axis=1)
                 best_class_probabilities = predictions[np.arange(len(best_class_indices)), best_class_indices]
                 
-                for i in range(len(best_class_indices)):
-                    print('%4d  %s: %.3f' % (i, class_names[best_class_indices[i]], best_class_probabilities[i]))
+                np.set_printoptions(threshold=np.inf)
+                print(class_names)
+                print(predictions)
                     
+                for i in range(len(best_class_indices)):
+                    if best_class_probabilities[i] < 0.15:
+                        print('%4d %s %s: %.3f' % (i, labels[i], class_names[best_class_indices[i]], best_class_probabilities[i]), 'unknow' )
+                    else:
+                        print('%4d %s %s: %.3f' % (i, labels[i], class_names[best_class_indices[i]], best_class_probabilities[i]))
+                
                 accuracy = np.mean(np.equal(best_class_indices, labels))
                 print('Accuracy: %.3f' % accuracy)
+
+            '''   
+            elif (args.mode == 'TRAIN_KNN'):
+                from sklearn.neighbors import KNeighborsClassifier  
+                model = KNeighborsClassifier()  
+                model.fit(emb_array, labels)  
                 
+                # Create a list of class names
+                class_names = [ cls.name.replace('_', ' ') for cls in dataset]
+
+                # Saving classifier model
+                with open(classifier_filename_exp, 'wb') as outfile:
+                    pickle.dump((model, class_names), outfile)
+                print('Saved classifier model to file "%s"' % classifier_filename_exp)
+    
+            elif (args.mode == 'CLASSIFY_KNN'):
+                from sklearn import metrics  
+                print('Testing classifier with knn')    
+                with open(classifier_filename_exp, 'rb') as infile:
+                    (model, class_names) = pickle.load(infile)
+
+                print('Loaded classifier model from file "%s"' % classifier_filename_exp)   
+
+                predictions = model.predict_proba(emb_array)
+                best_class_indices = np.argmax(predictions, axis=1)
+                best_class_probabilities = predictions[np.arange(len(best_class_indices)), best_class_indices]
+                
+                for i in range(len(best_class_indices)):
+                    print('%4d %s %s: %.3f' % (i, labels[i], class_names[best_class_indices[i]], best_class_probabilities[i]))
+                
+                accuracy = np.mean(np.equal(best_class_indices, labels))
+                print('Accuracy: %.3f' % accuracy)
+            '''
+        #accuracy = metrics.accuracy_score(y_test, predict)  
+        #print ('accuracy: %.2f%%' % (100 * accuracy)  )
+
             
 def split_dataset(dataset, min_nrof_images_per_class, nrof_train_images_per_class):
     train_set = []
@@ -138,16 +184,18 @@ def split_dataset(dataset, min_nrof_images_per_class, nrof_train_images_per_clas
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('mode', type=str, choices=['TRAIN', 'CLASSIFY'],
+    parser.add_argument('mode', type=str, choices=['TRAIN', 'CLASSIFY', 'TRAIN_KNN', 'CLASSIFY_KNN'],
         help='Indicates if a new classifier should be trained or a classification ' + 
         'model should be used for classification', default='CLASSIFY')
     parser.add_argument('data_dir', type=str,
         help='Path to the data directory containing aligned LFW face patches.')
-    parser.add_argument('model', type=str, 
+    parser.add_argument('model_embedding', type=str, 
         help='Could be either a directory containing the meta_file and ckpt_file or a model protobuf (.pb) file')
     parser.add_argument('classifier_filename', 
         help='Classifier model file name as a pickle (.pkl) file. ' + 
         'For training this is the output and for classification this is an input.')
+    parser.add_argument('--model_classifier', type=str, choices=['SVC', 'KNN'],
+        help='classifier method to perform', default='SVC')
     parser.add_argument('--use_split_dataset', 
         help='Indicates that the dataset specified by data_dir should be split into a training and test set. ' +  
         'Otherwise a separate test set can be specified using the test_data_dir option.', action='store_true')

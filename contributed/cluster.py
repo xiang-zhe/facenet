@@ -121,12 +121,12 @@ def align_data(image_list, image_size, margin, pnet, rnet, onet):
 
     img_list = []
 
-    for x in xrange(len(image_list)):
+    for x in range(len(image_list)):
         img_size = np.asarray(image_list[x].shape)[0:2]
         bounding_boxes, _ = align.detect_face.detect_face(image_list[x], minsize, pnet, rnet, onet, threshold, factor)
         nrof_samples = len(bounding_boxes)
         if nrof_samples > 0:
-            for i in xrange(nrof_samples):
+            for i in range(nrof_samples):
                 if bounding_boxes[i][4] > 0.95:
                     det = np.squeeze(bounding_boxes[i, 0:4])
                     bb = np.zeros(4, dtype=np.int32)
@@ -138,6 +138,7 @@ def align_data(image_list, image_size, margin, pnet, rnet, onet):
                     aligned = misc.imresize(cropped, (image_size, image_size), interp='bilinear')
                     prewhitened = facenet.prewhiten(aligned)
                     img_list.append(prewhitened)
+        print('do %d' %x)
 
     if len(img_list) > 0:
         images = np.stack(img_list)
@@ -149,9 +150,10 @@ def align_data(image_list, image_size, margin, pnet, rnet, onet):
 def create_network_face_detection(gpu_memory_fraction):
     with tf.Graph().as_default():
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_memory_fraction)
-        sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False))
+        sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=True))
         with sess.as_default():
             pnet, rnet, onet = align.detect_face.create_mtcnn(sess, None)
+            writer = tf.summary.FileWriter('/home/ubuntu/test/', sess.graph)
     return pnet, rnet, onet
 
 
@@ -180,11 +182,11 @@ def parse_arguments(argv):
     parser.add_argument('--min_cluster_size', type=int,
                         help='The minimum amount of pictures required for a cluster.', default=1)
     parser.add_argument('--cluster_threshold', type=float,
-                        help='The minimum distance for faces to be in the same cluster', default=1.0)
+                        help='The minimum distance for faces to be in the same cluster', default=0.55)
     parser.add_argument('--largest_cluster_only', action='store_true',
                         help='This argument will make that only the biggest cluster is saved.')
     parser.add_argument('--gpu_memory_fraction', type=float,
-                        help='Upper bound on the amount of GPU memory that will be used by the process.', default=1.0)
+                        help='Upper bound on the amount of GPU memory that will be used by the process.', default=0.8)
 
     return parser.parse_args(argv)
 
